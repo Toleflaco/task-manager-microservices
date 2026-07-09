@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:14
+    container_name: microservices-postgres
+    environment:
+      POSTGRES_USER: microservices_user
+      POSTGRES_PASSWORD: dev_password
+      POSTGRES_DB: microservices_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U microservices_user -d microservices_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  postgres-data:
