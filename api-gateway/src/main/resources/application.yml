@@ -4,7 +4,31 @@ server:
 spring:
   application:
     name: api-gateway
-
+  cloud:
+    gateway:
+      server:
+        webflux:
+          routes:
+            - id: auth-service-route
+              uri: http://localhost:8081
+              predicates:
+                - Path=/auth/**
+            - id: task-service-route
+              uri: http://localhost:8082
+              predicates:
+                - Path=/tasks/**
+            - id: task-service-categories-route
+              uri: http://localhost:8082
+              predicates:
+                - Path=/categories/**
+            - id: task-service-activity-route
+              uri: http://localhost:8082
+              predicates:
+                - Path=/me/activity/**
+            - id: auth-users-route
+              uri: http://localhost:8081
+              predicates:
+                - Path=/users/**
 management:
   endpoints:
     web:
