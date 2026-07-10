@@ -34,7 +34,7 @@ public interface TaskRepository extends JpaRepository<Task, Long>, JpaSpecificat
                 COALESCE(SUM(CASE WHEN t.status = com.mtole.task.tasks.TaskStatus.CANCELLED THEN 1L ELSE 0L END),0L)
                 )
                 FROM Task t 
-                WHERE t.user.id = :userId
+                WHERE t.userId = :userId
             """)
     TaskStatsResponse findStatsByUserId(@Param("userId") Long userId);
 
