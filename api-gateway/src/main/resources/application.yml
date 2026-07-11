@@ -29,6 +29,7 @@ spring:
               uri: http://localhost:8081
               predicates:
                 - Path=/users/**
+
 management:
   endpoints:
     web:
@@ -39,3 +40,6 @@ management:
       show-details: always
     gateway:
       access: read-only
+
+jwt:
+  secret: "dev-secret-do-not-use-in-production-min-256-bits-long-change-me-please"
