@@ -1,0 +1,15 @@
+# Perfil "docker": activo cuando SPRING_PROFILES_ACTIVE=docker.
+# Sobrescribe / añade solo lo que difiere del application.yml base.
+# En test-run (Testcontainers) NO se activa este perfil: las conexiones
+# a Postgres y Mongo vienen por @ServiceConnection.
+
+spring:
+  datasource:
+    url: jdbc:postgresql://postgres:5432/taskmanager?currentSchema=task_schema
+    username: ${POSTGRES_USER}
+    password: ${POSTGRES_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+
+  data:
+    mongodb:
+      uri: mongodb://mongo:27017/taskmanager

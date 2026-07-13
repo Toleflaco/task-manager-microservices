@@ -33,6 +33,6 @@ logging:
     org.flywaydb: INFO
 
 jwt:
-  secret: "b+GkjWKRAG96/MqBTUf64KBOKzLjtbOlHHWk8VwvUdWW6PAfk0ZzilC16lHh5kyv"
+  secret: ${JWT_SECRET:dev-only-secret-not-for-production-CHANGE-ME-please-min-32-chars}
   access-expiration: PT15M
   refresh-expiration: P7D

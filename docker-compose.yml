@@ -1,21 +1,163 @@
+# docker-compose.yml
+# Orquestación end-to-end del sistema task-manager-microservices.
+# Usage:
+#   docker compose up --build      # arranca todo, reconstruye imágenes
+#   docker compose down            # para y elimina contenedores (mantiene volúmenes)
+#   docker compose down -v         # para y elimina TAMBIÉN volúmenes (reset limpio)
+#   docker compose ps              # estado de los contenedores
+#   docker compose logs -f <svc>   # tail de logs de un servicio
+#
+# Trust boundary:
+#   Solo el gateway (puerto 8080) se expone al host.
+#   auth-service y task-service viven en la red interna 'backend'
+#   y no son alcanzables desde fuera. Toda petición pasa por el
+#   gateway y su validación de JWT (border authentication).
+
 services:
+
+  # -------------------------------------------------------------------
+  # Postgres — instancia única, dos schemas (auth_schema, task_schema).
+  # El init script en docker/postgres/init/ solo se ejecuta la primera
+  # vez que el volumen postgres-data está vacío.
+  # -------------------------------------------------------------------
   postgres:
-    image: postgres:14
-    container_name: microservices-postgres
+    image: postgres:14-alpine
+    container_name: tmm-postgres
     environment:
-      POSTGRES_USER: microservices_user
-      POSTGRES_PASSWORD: dev_password
-      POSTGRES_DB: microservices_db
-    ports:
-      - "5432:5432"
+      POSTGRES_DB: taskmanager
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      # - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U microservices_user -d microservices_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d taskmanager"]
       interval: 5s
       timeout: 3s
       retries: 5
+      start_period: 10s
+    networks:
+      - backend
 
+  # -------------------------------------------------------------------
+  # MongoDB — activity audit log del task-service.
+  # Sin autenticación: solo accesible desde la red interna 'backend'.
+  # Para producción: añadir MONGO_INITDB_ROOT_USERNAME/PASSWORD y auth.
+  # -------------------------------------------------------------------
+  mongo:
+    image: mongo:6.0
+    container_name: tmm-mongo
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ ping: 1 }).ok"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+    networks:
+      - backend
+
+  # -------------------------------------------------------------------
+  # Auth service — registro, login, JWT issuance, refresh tokens.
+  # Depende de Postgres saludable antes de arrancar Flyway.
+  # No expone puerto al host: solo alcanzable via gateway.
+  # -------------------------------------------------------------------
+  auth-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.auth
+    image: task-manager-microservices/auth-service:local
+    container_name: tmm-auth-service
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/actuator/health | grep -q '\"status\":\"UP\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    networks:
+      - backend
+
+  # -------------------------------------------------------------------
+  # Task service — tasks, categories, activity audit log.
+  # Depende de Postgres y Mongo saludables.
+  # No expone puerto al host: solo alcanzable via gateway.
+  # -------------------------------------------------------------------
+  task-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.task
+    image: task-manager-microservices/task-service:local
+    container_name: tmm-task-service
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8082/actuator/health | grep -q '\"status\":\"UP\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    networks:
+      - backend
+
+  # -------------------------------------------------------------------
+  # API Gateway — único servicio expuesto al host.
+  # Depende de auth-service y task-service saludables para evitar
+  # 503s durante el arranque (arrancaría igual sin ellos).
+  # -------------------------------------------------------------------
+  api-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    image: task-manager-microservices/api-gateway:local
+    container_name: tmm-api-gateway
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      JWT_SECRET: ${JWT_SECRET}
+    ports:
+      - "8080:8080"
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      task-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q '\"status\":\"UP\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - backend
+
+# -----------------------------------------------------------------------
+# Volúmenes: sobreviven a docker compose down (sin -v).
+# postgres-data mantiene las tablas y datos entre arranques.
+# mongo-data mantiene la colección activity_events.
+# -----------------------------------------------------------------------
 volumes:
   postgres-data:
+  mongo-data:
+
+# -----------------------------------------------------------------------
+# Red: bridge dedicada. Los contenedores se resuelven por nombre de
+# servicio (postgres, mongo, auth-service, task-service, api-gateway).
+# -----------------------------------------------------------------------
+networks:
+  backend:
+    driver: bridge

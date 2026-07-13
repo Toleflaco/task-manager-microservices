@@ -1,45 +1,30 @@
-server:
-  port: 8080
+# Perfil "docker": activo cuando SPRING_PROFILES_ACTIVE=docker.
+# Sobrescribe las URIs de las rutas para usar DNS interno de Compose
+# (auth-service, task-service) en vez de localhost.
 
 spring:
-  application:
-    name: api-gateway
   cloud:
     gateway:
       server:
         webflux:
           routes:
             - id: auth-service-route
-              uri: http://localhost:8081
+              uri: http://auth-service:8081
               predicates:
                 - Path=/auth/**
             - id: task-service-route
-              uri: http://localhost:8082
+              uri: http://task-service:8082
               predicates:
                 - Path=/tasks/**
             - id: task-service-categories-route
-              uri: http://localhost:8082
+              uri: http://task-service:8082
               predicates:
                 - Path=/categories/**
             - id: task-service-activity-route
-              uri: http://localhost:8082
+              uri: http://task-service:8082
               predicates:
                 - Path=/me/activity/**
             - id: auth-users-route
-              uri: http://localhost:8081
+              uri: http://auth-service:8081
               predicates:
                 - Path=/users/**
-
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health, info, gateway
-  endpoint:
-    health:
-      show-details: always
-    gateway:
-      access: read-only
-
-jwt:
-  secret: ${JWT_SECRET:dev-only-secret-not-for-production-CHANGE-ME-please-min-32-chars}
