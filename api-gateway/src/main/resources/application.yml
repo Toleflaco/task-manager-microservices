@@ -42,4 +42,4 @@ management:
       access: read-only
 
 jwt:
-  secret: ${JWT_SECRET:dev-only-secret-not-for-production-CHANGE-ME-please-min-32-chars}
+  secret: ${JWT_SECRET:ZGV2T25seVNlY3JldE5vdEZvclByb2R1Y3Rpb25DaGFuZ2VNZVBsZWFzZU1pbjMyQ2hhcnM=}
