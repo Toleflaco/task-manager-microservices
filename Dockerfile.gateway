@@ -1,0 +1,39 @@
+# ---- Etapa 1: Builder ----
+FROM eclipse-temurin:21-jdk-jammy AS builder
+WORKDIR /build
+
+# Copiamos el wrapper de Maven y el parent pom
+COPY .mvn/ .mvn/
+COPY mvnw pom.xml ./
+
+# Copiamos los pom de los tres módulos para que el reactor sea válido.
+# Solo api-gateway se compilará (por el -pl -am más abajo);
+# los otros dos poms están aquí para que Maven no se queje del reactor incompleto.
+COPY auth-service/pom.xml auth-service/
+COPY api-gateway/pom.xml api-gateway/
+COPY task-service/pom.xml task-service/
+
+# Descarga de dependencias de api-gateway (y del parent, gracias a -am)
+# Esta capa se cachea si los pom no cambian → builds rápidos
+RUN ./mvnw -pl api-gateway -am dependency:go-offline -B
+
+# Copiamos el código fuente del módulo
+COPY api-gateway/src api-gateway/src
+
+# Compilación del módulo
+RUN ./mvnw -pl api-gateway -am package -DskipTests -B
+
+# ---- Etapa 2: Runtime ----
+FROM eclipse-temurin:21-jre-jammy
+WORKDIR /app
+
+# Usuario no-root para runtime (buena práctica de seguridad)
+RUN groupadd --system --gid 1001 appuser \
+ && useradd  --system --uid 1001 --gid appuser --home-dir /app --shell /usr/sbin/nologin appuser
+USER appuser
+
+# Copiamos el jar desde el target del módulo (no de la raíz)
+COPY --from=builder /build/api-gateway/target/api-gateway-*.jar /app/app.jar
+
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]
