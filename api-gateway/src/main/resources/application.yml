@@ -17,6 +17,11 @@ spring:
               uri: http://localhost:8082
               predicates:
                 - Path=/tasks/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: taskServiceBreaker
+                    fallbackUri: forward:/fallback/tasks
             - id: task-service-categories-route
               uri: http://localhost:8082
               predicates:
@@ -43,3 +48,15 @@ management:
 
 jwt:
   secret: ${JWT_SECRET:ZGV2T25seVNlY3JldE5vdEZvclByb2R1Y3Rpb25DaGFuZ2VNZVBsZWFzZU1pbjMyQ2hhcnM=}
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      taskServiceBreaker:
+        registerHealthIndicator: true
+        slidingWindowType: COUNT_BASED
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10s
+        permittedNumberOfCallsInHalfOpenState: 3
