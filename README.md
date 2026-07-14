@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Toleflaco/task-manager-microservices/actions/workflows/ci.yml/badge.svg)](https://github.com/Toleflaco/task-manager-microservices/actions/workflows/ci.yml)
 
-**Java 21 · Spring Boot 3.5 · Spring Cloud Gateway · PostgreSQL · MongoDB · JWT · Testcontainers**
+**Java 21 · Spring Boot 3.5 · Spring Cloud Gateway · PostgreSQL · MongoDB · JWT · Testcontainers · Docker Compose**
 
 Decomposition of [`task-manager-api`](https://github.com/Toleflaco/task-manager-api)
 into a microservices architecture with an API Gateway and two backing
@@ -27,8 +27,9 @@ their business responsibility.
 
 Each service is built as a Maven module under a single reactor parent,
 with its own database schema, its own Flyway migrations, and its own
-Testcontainers setup for local development. This project is in active
-development as Phase 10 of the roadmap.
+Testcontainers setup for local development. The system runs end-to-end
+via Docker Compose (see [Getting started](#getting-started)) and is
+the operational core of Phase 10 of the roadmap.
 
 ## Tech stack
 
@@ -50,6 +51,7 @@ development as Phase 10 of the roadmap.
 - **SLF4J + Logback** — structured logging.
 - **Spring Boot Actuator** — health endpoints in all three services (`/actuator/health`), plus `/actuator/gateway/routes` on the gateway for route introspection.
 - **Jakarta Validation** — request body validation via annotations.
+- **Docker Compose** — five-container orchestration (PostgreSQL, MongoDB, and the three Spring services) on an internal bridge network with cascading health checks. Only the gateway publishes a port to the host, enforcing the border-authentication trust boundary at the network level.
 
 ## Architecture
 
@@ -110,19 +112,80 @@ activity audit log — the same rationale documented in the monolith's
 
 ## Getting started
 
+Two ways to run the system: **Docker Compose** for a full end-to-end
+stack in one command, or **Spring Boot `test-run`** for iterating on
+one service at a time against Testcontainers-managed infrastructure.
+
+### Requirements
+
+- Docker Desktop (or Docker Engine on Linux).
+- Java 21 (Temurin recommended) — only for the `test-run` path.
+  The Compose path does not require a JDK on the host: the Maven
+  build runs inside the builder stage of each Dockerfile.
+
+### Option 1 — Docker Compose (recommended for first look)
+
+The compose stack wires five containers into a single internal bridge
+network: PostgreSQL 14, MongoDB 6.0, the three Spring services, and
+health-check-driven start ordering. Only the gateway publishes a port
+to the host (8080). The auth and task services live on the internal
+network and are not reachable from outside — this is the trust
+boundary of the border-authentication pattern made operational.
+
+First-time setup — create a local `.env` from the template and fill
+in secrets:
+
+```bash
+cp .env.example .env
+# then edit .env with real values (see .env.example for guidance)
+```
+
+Then bring the stack up:
+
+```bash
+docker compose up --build -d
+```
+
+Watch the health cascade until every container reports `healthy`:
+
+```bash
+docker compose ps
+```
+
+Expected once ready:
+
+```
+NAME               STATUS                    PORTS
+tmm-api-gateway    Up (healthy)              0.0.0.0:8080->8080/tcp
+tmm-auth-service   Up (healthy)              8081/tcp
+tmm-task-service   Up (healthy)              8082/tcp
+tmm-postgres       Up (healthy)              5432/tcp
+tmm-mongo          Up (healthy)              27017/tcp
+```
+
+Note that only `tmm-api-gateway` publishes to the host. The other
+services expose ports only within the compose network.
+
+Tear down (keeping data volumes):
+
+```bash
+docker compose down
+```
+
+Full reset (removes Postgres and Mongo data volumes — needed if you
+change the Postgres init script):
+
+```bash
+docker compose down -v
+```
+
+### Option 2 — Spring Boot `test-run` (recommended for daily development)
+
 Each service can be run independently against Testcontainers-managed
 infrastructure using the Spring Boot `test-run` goal. This starts the
 service against a fresh PostgreSQL (and MongoDB for the task service)
 container, applying Flyway migrations at startup, without requiring
-any database installed on the host.
-
-### Requirements
-
-- Docker Desktop (or Docker Engine on Linux) — Testcontainers spins
-  up PostgreSQL 14 and MongoDB 6.0 containers on demand.
-- Java 21 (Temurin recommended). The Maven wrapper handles the rest.
-
-### Run the three services
+docker-compose or `.env`.
 
 Three terminals, one per service, from the repository root:
 
@@ -146,8 +209,8 @@ restarts pick up the already-running containers and start in seconds.
 
 ### End-to-end flow
 
-Once the three services are up, a full flow through the gateway looks
-like this:
+Once the stack is up (either option), a full flow through the gateway
+looks like this:
 
 ```bash
 # 1. Register a user (public, no JWT required)
@@ -171,30 +234,43 @@ curl -X POST http://localhost:8080/categories \
 The gateway validates the JWT, extracts the subject as user id, and
 propagates it as `X-User-Id` to the task service, which uses it for
 authorization and to populate `createdBy` on the entity through JPA
-auditing.
+auditing. In parallel, the task service publishes an
+`ApplicationEvent` that persists an `ActivityEvent` document in
+MongoDB — polyglot persistence coordinated in-process without
+distributed transactions.
 
 ### Health endpoints
 
-All three services expose Spring Boot Actuator's health endpoint:
+Only the gateway is reachable from the host:
 
 ```bash
-curl http://localhost:8080/actuator/health   # gateway
-curl http://localhost:8081/actuator/health   # auth-service
-curl http://localhost:8082/actuator/health   # task-service
+curl http://localhost:8080/actuator/health   # gateway (public)
 ```
 
 The gateway additionally exposes `/actuator/gateway/routes` in
-read-only mode for route introspection.
+read-only mode for route introspection. The auth and task services'
+health endpoints are only reachable from within the compose network:
+
+```bash
+docker compose exec api-gateway wget -qO- http://auth-service:8081/actuator/health
+docker compose exec api-gateway wget -qO- http://task-service:8082/actuator/health
+```
 
 ## Repository layout
 
 ```
 task-manager-microservices/
-├── api-gateway/          # Spring Cloud Gateway, JWT validation, routing
-├── auth-service/         # Users, credentials, tokens
-├── task-service/         # Tasks, categories, activity log
-├── docs/                 # Architecture Decision Records (ADRs)
-└── pom.xml               # Parent reactor with shared dependency management
+├── api-gateway/              # Spring Cloud Gateway, JWT validation, routing
+├── auth-service/             # Users, credentials, tokens
+├── task-service/             # Tasks, categories, activity log
+├── docker/postgres/init/     # Postgres schema-per-service init script
+├── docs/                     # Architecture Decision Records (ADRs)
+├── Dockerfile.auth           # Multi-stage build for auth-service
+├── Dockerfile.gateway        # Multi-stage build for api-gateway
+├── Dockerfile.task           # Multi-stage build for task-service
+├── docker-compose.yml        # 5-container orchestration with health cascade
+├── .env.example              # Template for local secrets (copy to .env)
+└── pom.xml                   # Parent reactor with shared dependency management
 ```
 
 ## Related work
@@ -206,11 +282,32 @@ task-manager-microservices/
   applies those decisions to a distributed context and adds the ones
   specific to it.
 
-## Roadmap
 
-This project is in active development. Currently in place: three-service
-decomposition, gateway with JWT validation, border authentication with
-`X-User-Id` propagation, per-service Testcontainers setup, and
-migration of persistence from the monolith. Planned next: ADR-004
-documenting the security architecture, containerization with Docker
-Compose, and additional resilience and observability patterns.
+## Future work
+
+The current codebase covers the operational core of a distributed
+system: bounded-context decomposition, border authentication with
+JWT validation at the edge and `X-User-Id` propagation to downstream
+services, schema-per-service persistence with Flyway, per-service
+Testcontainers for isolated development, GitHub Actions CI, and
+end-to-end orchestration via Docker Compose with a health-check
+cascade that makes container start ordering deterministic.
+
+The following distributed-system patterns are intentionally deferred
+and will be layered on top of this foundation as separate iterations:
+
+- **Resilience.** Circuit Breaker with Resilience4j on gateway →
+  downstream calls, retries with exponential back-off, bulkheads.
+- **Distributed tracing.** Micrometer Tracing with a Zipkin or Tempo
+  backend to follow a request across the three services.
+- **Async messaging.** RabbitMQ for events that don't need synchronous
+  responses (activity log fan-out, notifications).
+- **Saga / outbox.** Transactional outbox for reliable event
+  publication tied to Postgres commits.
+- **Contract testing.** Consumer-driven contracts between the gateway
+  and downstream services (Spring Cloud Contract or Pact).
+- **Distributed rate limiting and caching.** Redis-backed Bucket4j
+  and second-level cache.
+
+Each of these is worth its own ADR and dedicated iteration rather
+than a rushed inclusion.
