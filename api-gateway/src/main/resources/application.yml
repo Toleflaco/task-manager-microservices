@@ -1,3 +1,7 @@
+services:
+  auth-uri: http://localhost:8081
+  task-uri: http://localhost:8082
+
 server:
   port: 8080
 
@@ -10,28 +14,20 @@ spring:
         webflux:
           routes:
             - id: auth-service-route
-              uri: http://localhost:8081
+              uri: ${services.auth-uri}
               predicates:
                 - Path=/auth/**
             - id: task-service-route
-              uri: http://localhost:8082
+              uri: ${services.task-uri}
               predicates:
-                - Path=/tasks/**
+                - Path=/tasks/**,/categories/**,/me/activity/**
               filters:
                 - name: CircuitBreaker
                   args:
                     name: taskServiceBreaker
                     fallbackUri: forward:/fallback/tasks
-            - id: task-service-categories-route
-              uri: http://localhost:8082
-              predicates:
-                - Path=/categories/**
-            - id: task-service-activity-route
-              uri: http://localhost:8082
-              predicates:
-                - Path=/me/activity/**
             - id: auth-users-route
-              uri: http://localhost:8081
+              uri: ${services.auth-uri}
               predicates:
                 - Path=/users/**
 
@@ -39,12 +35,15 @@ management:
   endpoints:
     web:
       exposure:
-        include: health, info, gateway
+        include: health, info, gateway, circuitbreakers, circuitbreakerevents
   endpoint:
     health:
       show-details: always
     gateway:
       access: read-only
+  health:
+    circuitbreakers:
+      enabled: true
 
 jwt:
   secret: ${JWT_SECRET:ZGV2T25seVNlY3JldE5vdEZvclByb2R1Y3Rpb25DaGFuZ2VNZVBsZWFzZU1pbjMyQ2hhcnM=}

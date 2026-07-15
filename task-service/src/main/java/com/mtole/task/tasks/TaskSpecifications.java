@@ -11,7 +11,7 @@ public final class TaskSpecifications {
     }
 
     public static Specification<Task> byUserId(Long userId) {
-        return (root, query, cb) -> cb.equal(root.get("user").get("id"), userId);
+        return (root, query, cb) -> cb.equal(root.get("userId"), userId);
     }
 
     public static Specification<Task> byStatus(TaskStatus status) {
