@@ -26,6 +26,16 @@ spring:
                   args:
                     name: taskServiceBreaker
                     fallbackUri: forward:/fallback/tasks
+                - name: Retry
+                  args:
+                    retries: 2
+                    methods: GET
+                    series: SERVER_ERROR
+                    backoff:
+                      firstBackoff: 500ms
+                      maxBackoff: 1500ms
+                      factor: 2
+                      basedOnPreviousValue: false
             - id: auth-users-route
               uri: ${services.auth-uri}
               predicates:
@@ -59,3 +69,4 @@ resilience4j:
         failureRateThreshold: 50
         waitDurationInOpenState: 10s
         permittedNumberOfCallsInHalfOpenState: 3
+
