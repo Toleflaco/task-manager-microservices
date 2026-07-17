@@ -36,6 +36,14 @@ spring:
                       maxBackoff: 1500ms
                       factor: 2
                       basedOnPreviousValue: false
+              # Per-route timeouts declared per official docs. Verified
+              # empirically to have NO effect under the new
+              # spring.cloud.gateway.server.webflux prefix in SCG 2025.0.0.
+              # Effective timeout is defined by resilience4j.timelimiter
+              # instance 'taskServiceBreaker' (5s). See ADR-006.
+              metadata:
+                response-timeout: 2000
+                connect-timeout: 1000
             - id: auth-users-route
               uri: ${services.auth-uri}
               predicates:
@@ -69,4 +77,8 @@ resilience4j:
         failureRateThreshold: 50
         waitDurationInOpenState: 10s
         permittedNumberOfCallsInHalfOpenState: 3
-
+  timelimiter:
+    instances:
+      taskServiceBreaker:
+        timeoutDuration: 5s
+        cancelRunningFuture: true
