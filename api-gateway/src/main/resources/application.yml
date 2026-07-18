@@ -1,3 +1,7 @@
+services:
+  auth-uri: http://localhost:8081
+  task-uri: http://localhost:8082
+
 server:
   port: 8080
 
@@ -10,23 +14,38 @@ spring:
         webflux:
           routes:
             - id: auth-service-route
-              uri: http://localhost:8081
+              uri: ${services.auth-uri}
               predicates:
                 - Path=/auth/**
             - id: task-service-route
-              uri: http://localhost:8082
+              uri: ${services.task-uri}
               predicates:
-                - Path=/tasks/**
-            - id: task-service-categories-route
-              uri: http://localhost:8082
-              predicates:
-                - Path=/categories/**
-            - id: task-service-activity-route
-              uri: http://localhost:8082
-              predicates:
-                - Path=/me/activity/**
+                - Path=/tasks/**,/categories/**,/me/activity/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: taskServiceBreaker
+                    fallbackUri: forward:/fallback/tasks
+                - name: Retry
+                  args:
+                    retries: 2
+                    methods: GET
+                    series: SERVER_ERROR
+                    backoff:
+                      firstBackoff: 500ms
+                      maxBackoff: 1500ms
+                      factor: 2
+                      basedOnPreviousValue: false
+              # Per-route timeouts declared per official docs. Verified
+              # empirically to have NO effect under the new
+              # spring.cloud.gateway.server.webflux prefix in SCG 2025.0.0.
+              # Effective timeout is defined by resilience4j.timelimiter
+              # instance 'taskServiceBreaker' (5s). See ADR-006.
+              metadata:
+                response-timeout: 2000
+                connect-timeout: 1000
             - id: auth-users-route
-              uri: http://localhost:8081
+              uri: ${services.auth-uri}
               predicates:
                 - Path=/users/**
 
@@ -34,12 +53,32 @@ management:
   endpoints:
     web:
       exposure:
-        include: health, info, gateway
+        include: health, info, gateway, circuitbreakers, circuitbreakerevents
   endpoint:
     health:
       show-details: always
     gateway:
       access: read-only
+  health:
+    circuitbreakers:
+      enabled: true
 
 jwt:
   secret: ${JWT_SECRET:ZGV2T25seVNlY3JldE5vdEZvclByb2R1Y3Rpb25DaGFuZ2VNZVBsZWFzZU1pbjMyQ2hhcnM=}
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      taskServiceBreaker:
+        registerHealthIndicator: true
+        slidingWindowType: COUNT_BASED
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10s
+        permittedNumberOfCallsInHalfOpenState: 3
+  timelimiter:
+    instances:
+      taskServiceBreaker:
+        timeoutDuration: 5s
+        cancelRunningFuture: true

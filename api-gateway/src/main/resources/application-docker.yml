@@ -1,30 +1,8 @@
 # Perfil "docker": activo cuando SPRING_PROFILES_ACTIVE=docker.
-# Sobrescribe las URIs de las rutas para usar DNS interno de Compose
-# (auth-service, task-service) en vez de localhost.
-
-spring:
-  cloud:
-    gateway:
-      server:
-        webflux:
-          routes:
-            - id: auth-service-route
-              uri: http://auth-service:8081
-              predicates:
-                - Path=/auth/**
-            - id: task-service-route
-              uri: http://task-service:8082
-              predicates:
-                - Path=/tasks/**
-            - id: task-service-categories-route
-              uri: http://task-service:8082
-              predicates:
-                - Path=/categories/**
-            - id: task-service-activity-route
-              uri: http://task-service:8082
-              predicates:
-                - Path=/me/activity/**
-            - id: auth-users-route
-              uri: http://auth-service:8081
-              predicates:
-                - Path=/users/**
+# Sobrescribe únicamente los hostnames de los servicios downstream para
+# usar el DNS interno de Compose. La estructura de rutas (predicates,
+# filters, ids) vive una sola vez en application.yml y se reutiliza
+# entre perfiles.
+services:
+  auth-uri: http://auth-service:8081
+  task-uri: http://task-service:8082
