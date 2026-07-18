@@ -35,7 +35,8 @@ the operational core of Phase 10 of the roadmap.
 
 - **Java 21** — modern language features (records, pattern matching, virtual threads support).
 - **Spring Boot 3.5.4** — application framework across the three services (downgraded from monolith's Spring Boot 4.x for Spring Cloud 2025.0.0 compatibility).
-- **Spring Cloud Gateway 2025.0.0 (Northfields)** — reactive gateway on Netty, declarative routing, `GlobalFilter` for JWT validation.
+- **Spring Cloud Gateway 2025.0.0 (Northfields)** — reactive gateway on Netty, declarative routing, `GlobalFilter` for JWT validation, `CircuitBreaker` and `Retry` filters for downstream resilience.
+- **Resilience4j (via `spring-cloud-starter-circuitbreaker-reactor-resilience4j`)** — CircuitBreaker, Retry, and TimeLimiter on gateway → task-service calls. Full rationale in [ADR-006](docs/adr-006-resilience-patterns.md).
 - **Spring Security 6** — servlet-stack security in the task service, custom `OncePerRequestFilter` for header-based authentication.
 - **Spring Data JPA + Hibernate 6** — ORM in both services, JPA Specifications, entity graphs, optimistic locking with `@Version`.
 - **Spring Data MongoDB** — activity audit log in the task service.
@@ -109,6 +110,58 @@ through the propagated user id.
 transactional data (tasks, categories) and MongoDB for the append-only
 activity audit log — the same rationale documented in the monolith's
 [ADR-001](https://github.com/Toleflaco/task-manager-api/blob/main/docs/adr-001-polyglot-persistence.md).
+
+## Resilience at the gateway
+
+The gateway protects itself and healthy downstreams from failures in
+the task service by composing three resilience patterns on the
+`task-service-route`. The full rationale, alternatives considered,
+and empirical verification are documented in
+[`docs/adr-006-resilience-patterns.md`](docs/adr-006-resilience-patterns.md).
+Summary:
+
+- **CircuitBreaker** (`taskServiceBreaker`) — count-based sliding
+  window of ten calls, minimum five before evaluation, opens at 50%
+  failure rate, ten seconds in OPEN before probing HALF_OPEN.
+- **Retry** — two attempts on `GET` / `SERVER_ERROR` / `IOException`
+  / `TimeoutException`, exponential backoff (500ms → 1500ms).
+  GET-only scoping reflects RFC 9110 idempotency: retrying a
+  non-idempotent verb without an `Idempotency-Key` protocol risks
+  duplicate side effects.
+- **TimeLimiter** (integrated in the Spring Cloud CircuitBreaker
+  abstraction) — explicitly configured to five seconds, overriding
+  the invisible one-second default that ships with the starter and
+  bounds the total operation regardless of any per-call timeout.
+
+**Order in the filter chain.** CircuitBreaker is the outer filter,
+Retry the inner one. With CircuitBreaker outside, an OPEN state
+short-circuits before Retry can amplify traffic against an already
+diagnosed sick downstream; and a transient blip successfully
+absorbed by Retry registers at the breaker as a single successful
+call, preventing the blip from contaminating the statistical
+window. The integrated TimeLimiter wraps the whole composition as a
+consequence of the abstraction.
+
+**Observation and diagnostics.**
+
+```bash
+# Current state of every breaker instance
+curl -s http://localhost:8080/actuator/circuitbreakers | jq
+
+# Route definitions as read from YAML (includes metadata, filter args)
+curl -s http://localhost:8080/actuator/gateway/routedefinitions | jq
+
+# Compiled routes with filter order and resolved URIs
+curl -s http://localhost:8080/actuator/gateway/routes | jq
+```
+
+**Reproducing CLOSED → OPEN empirically:** with the stack up and a
+valid access token, pause `task-service` and issue repeated curls
+to `/tasks`. The first three or so calls take ~5 seconds each (the
+TimeLimiter ceiling); once the sliding window crosses the failure
+threshold, subsequent calls short-circuit in a few milliseconds.
+Unpause `task-service` and wait 10 seconds for HALF_OPEN probing
+to succeed and CLOSED to return.
 
 ## Getting started
 
@@ -247,8 +300,10 @@ Only the gateway is reachable from the host:
 curl http://localhost:8080/actuator/health   # gateway (public)
 ```
 
-The gateway additionally exposes `/actuator/gateway/routes` in
-read-only mode for route introspection. The auth and task services'
+The gateway additionally exposes `/actuator/gateway/routes` and
+`/actuator/gateway/routedefinitions` in read-only mode for route
+introspection, and `/actuator/circuitbreakers` for the state of the
+Resilience4j circuit breaker instances. The auth and task services'
 health endpoints are only reachable from within the compose network:
 
 ```bash
@@ -289,25 +344,28 @@ The current codebase covers the operational core of a distributed
 system: bounded-context decomposition, border authentication with
 JWT validation at the edge and `X-User-Id` propagation to downstream
 services, schema-per-service persistence with Flyway, per-service
-Testcontainers for isolated development, GitHub Actions CI, and
+Testcontainers for isolated development, GitHub Actions CI,
 end-to-end orchestration via Docker Compose with a health-check
-cascade that makes container start ordering deterministic.
+cascade that makes container start ordering deterministic, and
+resilience patterns (CircuitBreaker + Retry + TimeLimiter) at the
+gateway for graceful degradation under downstream failure.
 
 The following distributed-system patterns are intentionally deferred
 and will be layered on top of this foundation as separate iterations:
 
-- **Resilience.** Circuit Breaker with Resilience4j on gateway →
-  downstream calls, retries with exponential back-off, bulkheads.
 - **Distributed tracing.** Micrometer Tracing with a Zipkin or Tempo
   backend to follow a request across the three services.
-- **Async messaging.** RabbitMQ for events that don't need synchronous
-  responses (activity log fan-out, notifications).
+- **Async messaging.** RabbitMQ or Kafka for events that don't need
+  synchronous responses (activity log fan-out, notifications).
 - **Saga / outbox.** Transactional outbox for reliable event
   publication tied to Postgres commits.
 - **Contract testing.** Consumer-driven contracts between the gateway
   and downstream services (Spring Cloud Contract or Pact).
 - **Distributed rate limiting and caching.** Redis-backed Bucket4j
   and second-level cache.
+- **Bulkhead pattern.** Resource isolation between downstream calls
+  if the gateway evolves toward fan-out routing where a slow
+  downstream could starve the others.
 
 Each of these is worth its own ADR and dedicated iteration rather
 than a rushed inclusion.
