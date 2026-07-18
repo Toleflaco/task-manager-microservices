@@ -15,13 +15,13 @@ COPY task-service/pom.xml task-service/
 
 # Descarga de dependencias de api-gateway (y del parent, gracias a -am)
 # Esta capa se cachea si los pom no cambian → builds rápidos
-RUN ./mvnw -pl api-gateway -am dependency:go-offline -B
+RUN --mount=type=cache,target=/root/.m2 ./mvnw -pl api-gateway -am dependency:go-offline -B
 
 # Copiamos el código fuente del módulo
 COPY api-gateway/src api-gateway/src
 
 # Compilación del módulo
-RUN ./mvnw -pl api-gateway -am package -DskipTests -B
+RUN --mount=type=cache,target=/root/.m2 ./mvnw -pl api-gateway -am package -DskipTests -B
 
 # ---- Etapa 2: Runtime ----
 FROM eclipse-temurin:21-jre-jammy
