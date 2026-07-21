@@ -67,6 +67,26 @@ public class ActivityEvent {
         this.after = after;
         this.timestamp = timestamp;
     }
+    // Constructor con id explícito. Usado por el consumer para poblar
+    // el _id de Mongo con el eventId del contrato Kafka (idempotencia).
+    public ActivityEvent(
+            String id,
+            Long userId,
+            String action,
+            String resourceType,
+            Long resourceId,
+            Map<String, Object> before,
+            Map<String, Object> after,
+            Instant timestamp) {
+        this.id = id;
+        this.userId = userId;
+        this.action = action;
+        this.resourceType = resourceType;
+        this.resourceId = resourceId;
+        this.before = before;
+        this.after = after;
+        this.timestamp = timestamp;
+    }
 
     public String getId() {
         return id;
