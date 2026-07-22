@@ -13,3 +13,6 @@ spring:
   data:
     mongodb:
       uri: mongodb://mongo:27017/taskmanager
+
+  kafka:
+    bootstrap-servers: kafka:9092
