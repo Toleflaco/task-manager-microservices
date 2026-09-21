@@ -1,5 +1,11 @@
 # Task Manager Microservices
 
+[![CI](https://github.com/Toleflaco/task-manager-microservices/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Toleflaco/task-manager-microservices/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Java 21](https://img.shields.io/badge/Java-21-orange.svg)](https://openjdk.org/projects/jdk/21/)
+[![Spring Boot 4.0](https://img.shields.io/badge/Spring%20Boot-4.0-brightgreen.svg)](https://spring.io/projects/spring-boot)
+[![Kafka](https://img.shields.io/badge/Kafka-3.7-black.svg)](https://kafka.apache.org/)
+
 Monolith decomposition into event-driven microservices architecture: Auth Service, Task Service, API Gateway. Kafka as event bus, Resilience4j for distributed resilience, Docker Compose for local orchestration.
 
 ## Tech Stack
