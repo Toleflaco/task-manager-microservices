@@ -1,0 +1,21 @@
+spring:
+  application:
+    name: kafka-sandbox
+  kafka:
+    bootstrap-servers: localhost:9094
+    listener:
+      ack-mode: manual
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    consumer:
+      group-id: sandbox-offset-3
+      enable-auto-commit: false
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "com.mtole.sandbox"
+        spring.json.value.default.type: com.mtole.sandbox.PingEvent
+server:
+  port: 8090

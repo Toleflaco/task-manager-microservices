@@ -11,22 +11,6 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 
-/**
- * TODO S3: This SecurityConfig is a placeholder for Bloque 2 compilation.
- * The full security setup will be redesigned in Sesión 3:
- * - JWT validation moves entirely to api-gateway (perimeter security).
- * - Rate limiting moves entirely to api-gateway.
- * - auth-service keeps only BCrypt for login credential validation
- *   and public endpoints (/auth/login, /auth/refresh, /users registration).
- *
- * TODO S3: Este SecurityConfig es placeholder para que Bloque 2 compile.
- * La configuración completa de seguridad se rediseña en Sesión 3:
- * - Validación JWT se mueve entera al api-gateway (perimeter security).
- * - Rate limiting se mueve entero al api-gateway.
- * - auth-service se queda solo con BCrypt para validación de
- *   credenciales en login y endpoints públicos (/auth/login,
- *   /auth/refresh, /users registro).
- */
 @Configuration
 public class SecurityConfig {
 

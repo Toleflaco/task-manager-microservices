@@ -33,6 +33,7 @@
         <module>api-gateway</module>
         <module>auth-service</module>
         <module>task-service</module>
+        <module>kafka-sandbox</module>
     </modules>
 
     <!-- Centralized versions and build properties -->
