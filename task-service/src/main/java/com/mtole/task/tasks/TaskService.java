@@ -1,19 +1,20 @@
 package com.mtole.task.tasks;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mtole.task.categories.Category;
 import com.mtole.task.categories.CategoryRepository;
 import com.mtole.task.common.ResourceNotFoundException;
+import com.mtole.task.kafka.events.TaskEvent;
+import com.mtole.task.kafka.events.TaskEventType;
+import com.mtole.task.outbox.OutboxEvent;
+import com.mtole.task.outbox.OutboxRepository;
 import com.mtole.task.tasks.dto.TaskCreateRequest;
 import com.mtole.task.tasks.dto.TaskStatsResponse;
 import com.mtole.task.tasks.dto.TaskSummaryProjection;
 import com.mtole.task.tasks.dto.TaskUpdateRequest;
-import com.mtole.task.tasks.events.TaskCreatedEvent;
-import com.mtole.task.tasks.events.TaskDeletedEvent;
-import com.mtole.task.tasks.events.TaskStatusChangedEvent;
-import com.mtole.task.tasks.events.TaskUpdatedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -25,24 +26,28 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Optional;
+import java.util.UUID;
 
 @Service
 public class TaskService {
     private final TaskRepository taskRepository;
     private final CategoryRepository categoryRepository;
     private final TaskMapper taskMapper;
-    private final ApplicationEventPublisher eventPublisher;
+    private final OutboxRepository outboxRepository;
+    private final ObjectMapper objectMapper;
     private static final Logger log = LoggerFactory.getLogger(TaskService.class);
 
     public TaskService(
             TaskRepository taskRepository,
             CategoryRepository categoryRepository,
             TaskMapper taskMapper,
-            ApplicationEventPublisher eventPublisher) {
+            OutboxRepository outboxRepository,
+            ObjectMapper objectMapper) {
         this.taskRepository = taskRepository;
         this.categoryRepository = categoryRepository;
         this.taskMapper = taskMapper;
-        this.eventPublisher = eventPublisher;
+        this.outboxRepository = outboxRepository;
+        this.objectMapper = objectMapper;
     }
 
     @Transactional
@@ -61,14 +66,7 @@ public class TaskService {
         Task saved = taskRepository.save(entity);
         log.info("Task created with id={}", saved.getId());
 
-        eventPublisher.publishEvent(new TaskCreatedEvent(
-                saved.getId(),
-                currentUserId,
-                saved.getTitle(),
-                saved.getStatus().name(),
-                saved.getCategory() != null ? saved.getCategory().getId() : null,
-                Instant.now()
-        ));
+        appendOutboxEvent(currentUserId, saved.getId(), TaskEventType.CREATED, Instant.now());
 
         return saved;
     }
@@ -95,11 +93,7 @@ public class TaskService {
         Task saved = taskRepository.save(existing);
         log.info("Task updated with id={}", saved.getId());
 
-        eventPublisher.publishEvent(new TaskUpdatedEvent(
-                saved.getId(),
-                currentUserId,
-                Instant.now()
-        ));
+        appendOutboxEvent(currentUserId, saved.getId(), TaskEventType.UPDATED, Instant.now());
 
         return saved;
     }
@@ -118,13 +112,7 @@ public class TaskService {
         Task saved = taskRepository.save(existing);
         log.info("Task completed with id={}", saved.getId());
 
-        eventPublisher.publishEvent(new TaskStatusChangedEvent(
-                saved.getId(),
-                currentUserId,
-                currentStatus.name(),
-                TaskStatus.COMPLETED.name(),
-                Instant.now()
-        ));
+        appendOutboxEvent(currentUserId, saved.getId(), TaskEventType.STATUS_CHANGED, Instant.now());
 
         return saved;
     }
@@ -143,13 +131,7 @@ public class TaskService {
         Task saved = taskRepository.save(existing);
         log.info("Task cancelled with id={}", saved.getId());
 
-        eventPublisher.publishEvent(new TaskStatusChangedEvent(
-                saved.getId(),
-                currentUserId,
-                currentStatus.name(),
-                TaskStatus.CANCELLED.name(),
-                Instant.now()
-        ));
+        appendOutboxEvent(currentUserId, saved.getId(), TaskEventType.STATUS_CHANGED, Instant.now());
 
         return saved;
     }
@@ -189,19 +171,11 @@ public class TaskService {
             return false;
         }
         Task task = existing.get();
-        String title = task.getTitle();
-        String status = task.getStatus().name();
 
         taskRepository.delete(task);
         log.info("Deleted task id={}", id);
 
-        eventPublisher.publishEvent(new TaskDeletedEvent(
-                id,
-                currentUserId,
-                title,
-                status,
-                Instant.now()
-        ));
+        appendOutboxEvent(currentUserId, id, TaskEventType.DELETED, Instant.now());
 
         return true;
     }
@@ -209,5 +183,33 @@ public class TaskService {
     @Transactional(readOnly = true)
     public TaskStatsResponse getStats(Long currentUserId) {
         return taskRepository.findStatsByUserId(currentUserId);
+    }
+
+    /**
+     * Apunta un evento en la tabla outbox_events dentro de la transacción actual.
+     * El poller @Scheduled (K01-L) lo recogerá y lo publicará a Kafka.
+     * Ver docs/adr-008-outbox-pattern-polling.md.
+     */
+    private void appendOutboxEvent(Long userId, Long taskId, TaskEventType type, Instant occurredAt) {
+        TaskEvent kafkaEvent = new TaskEvent(
+                UUID.randomUUID(),
+                type,
+                userId,
+                taskId,
+                occurredAt
+        );
+        String payload;
+        try {
+            payload = objectMapper.writeValueAsString(kafkaEvent);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Failed to serialize TaskEvent for outbox", e);
+        }
+        OutboxEvent outboxEvent = new OutboxEvent(
+                "task",
+                taskId.toString(),
+                "task." + type.name().toLowerCase(),
+                payload
+        );
+        outboxRepository.save(outboxEvent);
     }
 }

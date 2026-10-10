@@ -30,7 +30,7 @@ import static com.mtole.task.kafka.KafkaConfig.TOPIC_TASK_EVENTS;
  * eventos de transacciones fallidas no se publican. No garantiza publicación
  * ante fallo del broker (deuda técnica: transactional outbox, ADR-007).
  */
-@Component
+// @Component  // Desactivado K01-K: sustituido por outbox + poller. Ver docs/adr-008-outbox-pattern-polling.md
 public class TaskEventKafkaPublisher {
 
     private static final Logger log = LoggerFactory.getLogger(TaskEventKafkaPublisher.class);
