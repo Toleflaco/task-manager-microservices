@@ -10,7 +10,7 @@ import java.util.UUID;
 public interface OutboxRepository extends JpaRepository<OutboxEvent, UUID> {
 
     @Query(nativeQuery = true, value = """
-     SELECT * FROM outbox_events
+     SELECT * FROM task_schema.outbox_events
      WHERE published_at IS NULL
      ORDER BY created_at ASC
      LIMIT :limit
