@@ -41,7 +41,14 @@ spring:
         spring.json.trusted.packages: "com.mtole.task.kafka.events"
     listener:
       ack-mode: MANUAL_IMMEDIATE
-      
+
+outbox:
+  poller:
+    fixed-delay-ms: 500
+    initial-delay-ms: 5000
+    batch-size: 100
+    send-timeout-ms: 10000
+
 management:
   endpoints:
     web:
