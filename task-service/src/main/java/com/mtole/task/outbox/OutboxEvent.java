@@ -1,6 +1,5 @@
 package com.mtole.task.outbox;
 
-import com.mtole.task.tasks.Task;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
