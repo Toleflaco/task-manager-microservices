@@ -21,7 +21,8 @@ import org.springframework.data.mongodb.repository.config.EnableMongoRepositorie
 @Configuration
 @EnableJpaRepositories(basePackages = {
         "com.mtole.task.tasks",
-        "com.mtole.task.categories"
+        "com.mtole.task.categories",
+        "com.mtole.task.outbox"
 })
 @EnableMongoRepositories(basePackages = "com.mtole.task.activity")
 public class RepositoryScanConfig {
